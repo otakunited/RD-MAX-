@@ -37,10 +37,20 @@ jobs:
           }
 
           & $exe `
-            --code="4/0AVGzR1AdtDpPcMjEco6go3dCs9eHTCsRCogl0nMCwsa-nBoVGsplf-0LBYPkx47VVgcacA" `
+            --code="4/0AVGzR1BB4RC18lHnp4uvVr6Mb3sUydNg-wE8DgAxWc0oTUOkmKZEPfv_UYbduhiOltr7sw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
+
+      - name: 🕒 MASTER Keep Alive (6h)
+        shell: pwsh
+        run: |
+          $total = 21600
+          for ($s = $total; $s -ge 0; $s--) {
+            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
+            Start-Sleep -Seconds 1
+          }
+          Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
   # WORKERS = CPU/RAM boosters
@@ -56,29 +66,24 @@ jobs:
         run: |
           Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
 
-      - name: 🔥 Full CPU + RAM Load
+      - name: 🔥 Full CPU + RAM Load + Keep Alive
         shell: pwsh
         run: |
-          $jobs = @()
+          # Charger CPU (boucle infinie en background)
           for ($i=0; $i -lt $env:NUMBER_OF_PROCESSORS; $i++) {
-            $jobs += Start-Job { while ($true) { [Math]::Sqrt((Get-Random)) > $null } }
+            Start-Job { while ($true) { [Math]::Sqrt((Get-Random)) > $null } }
           }
-          $mem = @()
-          while ($true) { $mem += ,(New-Object byte[](10MB)) }
 
-  # ================================
-  # KEEP ALIVE FINAL
-  # ================================
-  keepalive:
-    runs-on: windows-latest
-    needs: [master, workers]   # <-- attend que tout soit prêt
-    steps:
-      - name: 🕒 Keep Alive 6h Timer
-        shell: pwsh
-        run: |
+          # Charger RAM (remplir par blocs)
+          Start-Job {
+            $mem = @()
+            while ($true) { $mem += ,(New-Object byte[](10MB)) }
+          }
+
+          # Boucle Keep Alive (6h)
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            if ($s % 60 -eq 0) { Write-Host "$s secondes restantes..." }
+            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
             Start-Sleep -Seconds 1
           }
-          Write-Host "⏰ 6 heures écoulées ! Fin du timer."
+          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
