@@ -66,7 +66,7 @@ jobs:
           }
 
           & $exe `
-            --code="4/0AVGzR1BTzDDdOV_gGajBk0RS5YdjdseX9Lgrk47mE-lWBgzG1vsIOMxUEH1EmLV4sPEl4A" `
+            --code="4/0AVGzR1AEZ8ezslQakiFIL86JsOWGxPe59fFU0hFWFIrImqmK7OqzJh6oBw_QyoXlo4pTVg" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name="EnigMano-${{ matrix.instance }}" `
             --pin=123456
