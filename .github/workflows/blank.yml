@@ -37,7 +37,7 @@ jobs:
           }
 
           & $exe `
-            --code="4/0AVGzR1BB4RC18lHnp4uvVr6Mb3sUydNg-wE8DgAxWc0oTUOkmKZEPfv_UYbduhiOltr7sw" `
+            --code="4/0AVGzR1B4v_KQG8n-OqMYygTYwyK_1A9wwA-d7ntWqfdpuqkxLur2ZaXrTUhgnoSlB8wMYw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
