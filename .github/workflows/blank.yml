@@ -1,11 +1,11 @@
-name: "⚡ EnigMano Win11 + CRD + Workers"
+name: "⚡ EnigMano Win11 + CRD + 19 Workers"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = Avec Chrome Remote Desktop
+  # MASTER JOB = Chrome Remote Desktop
   # ================================
   master:
     runs-on: windows-latest
@@ -37,60 +37,48 @@ jobs:
           }
 
           & $exe `
-            --code="4/0AVGzR1BGsDsjredS7f2rUz8J1hbRdxPzpvGTey7ATUdvepbvvdt1VPJFCKosRnqve5GRFQ" `
+            --code="4/0AVGzR1AdtDpPcMjEco6go3dCs9eHTCsRCogl0nMCwsa-nBoVGsplf-0LBYPkx47VVgcacA" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
 
-      # Keep Alive à la fin SEULEMENT sur le master
+  # ================================
+  # WORKERS = CPU/RAM boosters
+  # ================================
+  workers:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - name: 🚀 Worker ${{ matrix.instance }} Started
+        shell: pwsh
+        run: |
+          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
+
+      - name: 🔥 Full CPU + RAM Load
+        shell: pwsh
+        run: |
+          $jobs = @()
+          for ($i=0; $i -lt $env:NUMBER_OF_PROCESSORS; $i++) {
+            $jobs += Start-Job { while ($true) { [Math]::Sqrt((Get-Random)) > $null } }
+          }
+          $mem = @()
+          while ($true) { $mem += ,(New-Object byte[](10MB)) }
+
+  # ================================
+  # KEEP ALIVE FINAL
+  # ================================
+  keepalive:
+    runs-on: windows-latest
+    needs: [master, workers]   # <-- attend que tout soit prêt
+    steps:
       - name: 🕒 Keep Alive 6h Timer
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            if ($s % 60 -eq 0) {
-              Write-Host "$s secondes restantes..."
-            }
+            if ($s % 60 -eq 0) { Write-Host "$s secondes restantes..." }
             Start-Sleep -Seconds 1
           }
           Write-Host "⏰ 6 heures écoulées ! Fin du timer."
-
-      - name: 💠 Final Status
-        if: always()
-        shell: pwsh
-        run: |
-          Write-Host "✅ EnigMano MASTER déployé avec CRD."
-          Write-Host "🔋 Powered by GitHub Actions"
-
-
-  # ================================
-  # WORKER JOBS = Pure CPU/RAM burn
-  # ================================
-  worker:
-    runs-on: windows-latest
-    needs: master   # <-- pour que ça tourne AVANT le Keep Alive
-    strategy:
-      matrix:
-        instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
-    steps:
-      - name: 🔥 Worker ${{ matrix.instance }} Started
-        shell: pwsh
-        run: |
-          Write-Host "🚀 Worker ${{ matrix.instance }} prêt à booster le master."
-
-      - name: 💻 Max CPU & RAM Load
-        shell: pwsh
-        run: |
-          $array = @()
-          for ($i=0; $i -lt 100000000; $i++) {
-            $array += $i
-            if ($i % 100000 -eq 0) {
-              Write-Host "Worker ${{ matrix.instance }} : $i"
-            }
-          }
-
-      - name: ✅ Worker Finished
-        if: always()
-        shell: pwsh
-        run: |
-          Write-Host "✅ Worker ${{ matrix.instance }} terminé."
