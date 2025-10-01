@@ -1,65 +1,79 @@
-name: "⚡ EnigMano Win11 Multi-CRD"
+name: "⚡ EnigMano Win11 + CRD Cluster"
 
 on:
   workflow_dispatch:
 
 jobs:
-  # ===== JOB 1 : Installe CRD UNE SEULE FOIS =====
-  setup-crd:
+  master:
     runs-on: windows-latest
     steps:
-      - name: 📥 Installer Chrome Remote Desktop
+      - name: 📌 Master Parameters
+        shell: pwsh
+        run: |
+          Write-Host "==============================================="
+          Write-Host "🔹 Master Instance"
+          Write-Host "📦 Repo : $env:GITHUB_REPOSITORY"
+          Write-Host "==============================================="
+
+      - name: 📥 Install Chrome Remote Desktop
         shell: pwsh
         run: |
           $crdInstaller = "$env:TEMP\crdhost.msi"
           Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
           Remove-Item $crdInstaller -Force
-          Write-Host "✅ CRD installé."
+          Write-Host "✅ CRD Installed."
 
-      - name: 📦 Sauvegarde CRD en artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: crd-install
-          path: "C:\\Program Files (x86)\\Google\\Chrome Remote Desktop"
-
-  # ===== JOB 2 : Lancer 20 instances en parallèle =====
-  multi-instances:
-    needs: setup-crd
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        instance: [1,2,3,4,5,6,7,8,9,10,
-                   11,12,13,14,15,16,17,18,19,20]
-      max-parallel: 20
-
-    steps:
-      - name: 📥 Récup CRD installé
-        uses: actions/download-artifact@v4
-        with:
-          name: crd-install
-          path: "C:\\Program Files (x86)\\Google\\Chrome Remote Desktop"
-
-      - name: ⚔️ Start Chrome Remote Desktop Host (Instance ${{ matrix.instance }})
+      - name: ⚔️ Start CRD Host
         shell: pwsh
         run: |
-          $exe = "C:\\Program Files (x86)\\Google\\Chrome Remote Desktop\\CurrentVersion\\remoting_start_host.exe"
+          $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           if (-not (Test-Path $exe)) {
-            Write-Error "❌ CRD executable not found"
+            Write-Error "❌ CRD executable not found!"
             exit 1
           }
-
           & $exe `
-            --code="4/0AVGzR1D1wRUYD6GNdZiM4Ij0aSUJNK3rGJ_yva3eJX4BWSzrzZ8Vz6rHjY14TCXMr_ce4w" `
+            --code="4/0AVGzR1CBDHQTY1qhlDOgnuda5jJS3_E92dxGdn7xZWTr91c45DFyAeGc0laVkS52xqasRA" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
-            --name="Instance-${{ matrix.instance }}" `
+            --name=$Env:COMPUTERNAME `
             --pin=123456
 
-      - name: 🕒 Keep Alive (Instance ${{ matrix.instance }})
+          # Sauvegarde infos de connexion CRD
+          echo "PIN=123456" > crd_info.txt
+          echo "NAME=$Env:COMPUTERNAME" >> crd_info.txt
+
+      - name: 📡 Share CRD Connection
+        uses: actions/upload-artifact@v4
+        with:
+          name: crd-info
+          path: crd_info.txt
+
+      - name: 🕒 Keep Alive
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            if ($s % 60 -eq 0) { Write-Host "Instance-${{ matrix.instance }} : $s sec restantes..." }
+            if ($s % 60 -eq 0) { Write-Host "$s sec restantes..." }
             Start-Sleep -Seconds 1
           }
+
+  workers:
+    needs: master
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        instance: [1,2,3,4,5]   # nombre de workers
+      max-parallel: 2           # limite combien en même temps
+    steps:
+      - name: 🔽 Download CRD Info
+        uses: actions/download-artifact@v4
+        with:
+          name: crd-info
+          path: ./crd
+
+      - name: ⚡ Worker ${{ matrix.instance }} Boost
+        shell: pwsh
+        run: |
+          Write-Host "🚀 Worker ${{ matrix.instance }} renforçant le Master..."
+          Get-Content ./crd/crd_info.txt | Write-Host
+          # Ici tu lances des tâches pour renforcer le Master (ex: calcul distribué, stress CPU, etc.)
