@@ -47,8 +47,12 @@ jobs:
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
+            # Simulation CPU/RAM en continu
+            [Math]::Sqrt((Get-Random)) > $null
+            $null = ,(New-Object byte[](1MB))
+
             if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
-            Start-Sleep -Seconds 1
+            Start-Sleep -Milliseconds 900
           }
           Write-Host "⏰ MASTER terminé après 6h."
 
@@ -66,24 +70,18 @@ jobs:
         run: |
           Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
 
-      - name: 🔥 Full CPU + RAM Load + Keep Alive
+      - name: 🔥 Worker Load + Keep Alive (6h)
         shell: pwsh
         run: |
-          # Charger CPU (boucle infinie en background)
-          for ($i=0; $i -lt $env:NUMBER_OF_PROCESSORS; $i++) {
-            Start-Job { while ($true) { [Math]::Sqrt((Get-Random)) > $null } }
-          }
-
-          # Charger RAM (remplir par blocs)
-          Start-Job {
-            $mem = @()
-            while ($true) { $mem += ,(New-Object byte[](10MB)) }
-          }
-
-          # Boucle Keep Alive (6h)
           $total = 21600
+          $mem = @()
           for ($s = $total; $s -ge 0; $s--) {
+            # Charge CPU (calcul inutile)
+            [Math]::Sqrt((Get-Random)) > $null
+            # Charge RAM (ajout petit bloc)
+            $mem += ,(New-Object byte[](1MB))
+
             if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
-            Start-Sleep -Seconds 1
+            Start-Sleep -Milliseconds 900
           }
           Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
