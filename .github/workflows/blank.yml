@@ -1,14 +1,16 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers"
+name: "⚡ EnigMano Win11 + CRD + 19 Workers Cluster"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = Chrome Remote Desktop
+  # MASTER JOB = CRD + Cluster Head
   # ================================
   master:
     runs-on: windows-latest
+    outputs:
+      master_ip: ${{ steps.setip.outputs.master_ip }}
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
@@ -25,7 +27,7 @@ jobs:
           Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
           Remove-Item $crdInstaller -Force
-          Write-Host "✅ Chrome Remote Desktop installed."
+          Write-Host "✅ CRD installed."
 
       - name: ⚔️ Start Chrome Remote Desktop Host
         shell: pwsh
@@ -35,53 +37,64 @@ jobs:
             Write-Error "❌ CRD executable not found at $exe"
             exit 1
           }
-
           & $exe `
-            --code="4/0AVGzR1B4v_KQG8n-OqMYygTYwyK_1A9wwA-d7ntWqfdpuqkxLur2ZaXrTUhgnoSlB8wMYw" `
+            --code="4/0AVGzR1Bd4Q_ClmJ52lLEYN1-i0bRdzRjlQrBLXdYJDB18aPEKIDSKaqgGfLIfsmFKnK2fg" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
+
+      - name: 🐍 Install Python + Ray
+        run: |
+          choco install -y python --version=3.10.11
+          refreshenv
+          pip install ray
+
+      - name: 🚀 Start Ray Head Node
+        id: setip
+        run: |
+          ray start --head --port=6379 --include-dashboard=True
+          $ip = (hostname -i)
+          echo "master_ip=$ip" >> $env:GITHUB_OUTPUT
 
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            # Simulation CPU/RAM en continu
-            [Math]::Sqrt((Get-Random)) > $null
-            $null = ,(New-Object byte[](1MB))
-
-            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
+            Write-Host "MASTER Alive... $s sec restantes"
+            Start-Sleep -Seconds 60
           }
-          Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
-  # WORKERS = CPU/RAM boosters
+  # WORKERS JOBS = Cluster Nodes
   # ================================
   workers:
     runs-on: windows-latest
+    needs: master
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
       - name: 🚀 Worker ${{ matrix.instance }} Started
         shell: pwsh
-        run: |
-          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
+        run: Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
 
-      - name: 🔥 Worker Load + Keep Alive (6h)
+      - name: 🐍 Install Python + Ray
+        run: |
+          choco install -y python --version=3.10.11
+          refreshenv
+          pip install ray
+
+      - name: 🔗 Connect Worker to Master
+        run: |
+          $MASTER_IP="${{ needs.master.outputs.master_ip }}"
+          ray start --address="$MASTER_IP:6379"
+
+      - name: 🕒 WORKER Keep Alive (6h)
         shell: pwsh
         run: |
           $total = 21600
-          $mem = @()
           for ($s = $total; $s -ge 0; $s--) {
-            # Charge CPU (calcul inutile)
-            [Math]::Sqrt((Get-Random)) > $null
-            # Charge RAM (ajout petit bloc)
-            $mem += ,(New-Object byte[](1MB))
-
-            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
+            Write-Host "Worker ${{ matrix.instance }} Alive... $s sec restantes"
+            Start-Sleep -Seconds 60
           }
-          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
