@@ -11,7 +11,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "==============================================="
-          Write-Host "🔹 Master Instance"
+          Write-Host "🔹 Master Instance (CRD)"
           Write-Host "📦 Repo : $env:GITHUB_REPOSITORY"
           Write-Host "==============================================="
 
@@ -33,12 +33,12 @@ jobs:
             exit 1
           }
           & $exe `
-            --code="4/0AVGzR1CBDHQTY1qhlDOgnuda5jJS3_E92dxGdn7xZWTr91c45DFyAeGc0laVkS52xqasRA" `
+            --code="4/0AVGzR1BdYBW5xdCFet4-FHUN9N-lKrAchk9gJondkxVB3je8pI1krQq-nnBc11Su9ydhwA" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
 
-          # Sauvegarde infos de connexion CRD
+          # Sauvegarde infos CRD
           echo "PIN=123456" > crd_info.txt
           echo "NAME=$Env:COMPUTERNAME" >> crd_info.txt
 
@@ -48,7 +48,7 @@ jobs:
           name: crd-info
           path: crd_info.txt
 
-      - name: 🕒 Keep Alive
+      - name: 🕒 Keep Alive 6h
         shell: pwsh
         run: |
           $total = 21600
@@ -62,8 +62,8 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        instance: [1,2,3,4,5]   # nombre de workers
-      max-parallel: 2           # limite combien en même temps
+        instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]  # 20 runners
+      max-parallel: 5   # ajuste si GitHub annule quand trop d’un coup
     steps:
       - name: 🔽 Download CRD Info
         uses: actions/download-artifact@v4
@@ -71,9 +71,10 @@ jobs:
           name: crd-info
           path: ./crd
 
-      - name: ⚡ Worker ${{ matrix.instance }} Boost
+      - name: ⚡ Worker ${{ matrix.instance }}
         shell: pwsh
         run: |
-          Write-Host "🚀 Worker ${{ matrix.instance }} renforçant le Master..."
+          Write-Host "🚀 Worker ${{ matrix.instance }} renforce le Master..."
           Get-Content ./crd/crd_info.txt | Write-Host
-          # Ici tu lances des tâches pour renforcer le Master (ex: calcul distribué, stress CPU, etc.)
+          # Ici tu peux lancer des tâches lourdes pour booster perf (CPU, GPU émulation, calcul distribué, etc.)
+          Start-Sleep -Seconds 30
