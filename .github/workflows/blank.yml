@@ -1,18 +1,24 @@
-name: "⚡ EnigMano Win11 + CRD Cluster"
+name: "⚡ EnigMano Win11 + CRD Deployment (20 Instances)"
 
 on:
   workflow_dispatch:
 
 jobs:
-  master:
+  deploy-enigmano:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        instance: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 
+                   11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+      max-parallel: 20
+
     steps:
-      - name: 📌 Master Parameters
+      - name: 📌 Deployment Parameters
         shell: pwsh
         run: |
           Write-Host "==============================================="
-          Write-Host "🔹 Master Instance (CRD)"
-          Write-Host "📦 Repo : $env:GITHUB_REPOSITORY"
+          Write-Host "🔹 EnigMano Instance : ${{ matrix.instance }}"
+          Write-Host "📦 Repository        : $env:GITHUB_REPOSITORY"
           Write-Host "==============================================="
 
       - name: 📥 Install Chrome Remote Desktop
@@ -22,59 +28,37 @@ jobs:
           Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
           Remove-Item $crdInstaller -Force
-          Write-Host "✅ CRD Installed."
+          Write-Host "✅ Chrome Remote Desktop installed."
 
-      - name: ⚔️ Start CRD Host
+      - name: ⚔️ Start Chrome Remote Desktop Host
         shell: pwsh
         run: |
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+
           if (-not (Test-Path $exe)) {
-            Write-Error "❌ CRD executable not found!"
+            Write-Error "❌ CRD executable not found at $exe"
             exit 1
           }
+
           & $exe `
             --code="4/0AVGzR1BdYBW5xdCFet4-FHUN9N-lKrAchk9gJondkxVB3je8pI1krQq-nnBc11Su9ydhwA" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
-            --name=$Env:COMPUTERNAME `
+            --name="EnigMano-${{ matrix.instance }}" `
             --pin=123456
 
-          # Sauvegarde infos CRD
-          echo "PIN=123456" > crd_info.txt
-          echo "NAME=$Env:COMPUTERNAME" >> crd_info.txt
-
-      - name: 📡 Share CRD Connection
-        uses: actions/upload-artifact@v4
-        with:
-          name: crd-info
-          path: crd_info.txt
-
-      - name: 🕒 Keep Alive 6h
+      - name: 🕒 Keep Alive 6h Timer
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            if ($s % 60 -eq 0) { Write-Host "$s sec restantes..." }
+            if ($s % 60 -eq 0) { Write-Host "$s secondes restantes..." }
             Start-Sleep -Seconds 1
           }
+          Write-Host "⏰ 6 heures écoulées ! Fin du timer."
 
-  workers:
-    needs: master
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]  # 20 runners
-      max-parallel: 5   # ajuste si GitHub annule quand trop d’un coup
-    steps:
-      - name: 🔽 Download CRD Info
-        uses: actions/download-artifact@v4
-        with:
-          name: crd-info
-          path: ./crd
-
-      - name: ⚡ Worker ${{ matrix.instance }}
+      - name: 💠 Final Status
+        if: always()
         shell: pwsh
         run: |
-          Write-Host "🚀 Worker ${{ matrix.instance }} renforce le Master..."
-          Get-Content ./crd/crd_info.txt | Write-Host
-          # Ici tu peux lancer des tâches lourdes pour booster perf (CPU, GPU émulation, calcul distribué, etc.)
-          Start-Sleep -Seconds 30
+          Write-Host "✅ EnigMano Instance ${{ matrix.instance }} deployed with Chrome Remote Desktop."
+          Write-Host "🔋 Powered by: CRD + GitHub Actions"
