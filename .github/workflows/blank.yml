@@ -42,7 +42,7 @@ jobs:
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
           & $exe `
-            --code="4/0AVGzR1BqB8I7XFhar35kzF7lJNLfXcN1DnFag2J0dx_ukOcSBROX26dpl7tw7qmwRn57Kw" `
+            --code="4/0AVGzR1D6yrAR-CQpmwmhWyXKbc04HhOUJcM89VwTFkKETB08rnj6TmheuocwntRmoskZBw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
@@ -58,8 +58,13 @@ jobs:
       - name: 🖥 Start Dask Scheduler
         shell: pwsh
         run: |
-          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786"
-          Write-Host "✅ Scheduler started."
+          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786" 
+
+      - name: ⏳ Wait 2 minutes for workers
+        shell: pwsh
+        run: |
+          Write-Host "Waiting 2 minutes for workers to connect..."
+          Start-Sleep -Seconds 120
 
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
@@ -78,7 +83,7 @@ jobs:
   # ================================
   workers:
     runs-on: windows-latest
-    needs: master
+    needs: master   # Attend que le master ait exposé son IP
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
@@ -90,10 +95,10 @@ jobs:
           pip install dask distributed --quiet
           Write-Host "✅ Worker Python + Dask installed."
 
-      - name: ⏳ Wait 2 minutes for Scheduler
+      - name: ⏳ Wait 2 minutes before connecting to scheduler
         shell: pwsh
         run: |
-          Write-Host "Waiting 2 minutes for scheduler to be ready..."
+          Write-Host "Worker ${{ matrix.instance }} waiting 2 minutes before connecting..."
           Start-Sleep -Seconds 120
 
       - name: 🚀 Connect Worker ${{ matrix.instance }} to Scheduler
@@ -101,7 +106,7 @@ jobs:
         run: |
           $scheduler = "${{ needs.master.outputs.scheduler_ip }}:8786"
           Write-Host "Worker ${{ matrix.instance }} connecting to scheduler at $scheduler"
-          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_worker $scheduler"
+          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_worker $scheduler" 
 
       - name: 🔥 Worker Load + Keep Alive (6h)
         shell: pwsh
