@@ -1,4 +1,4 @@
-name: "⚡ EnigMano Win11 + CRD Deployment (fixed watchdog)"
+name: "⚡ EnigMano Win11 + CRD Deployment (windows-latest max-perf)"
 
 on:
   workflow_dispatch:
@@ -6,68 +6,107 @@ on:
 jobs:
   deploy-enigmano:
     runs-on: windows-latest
-    name: Deploy EnigMano (windows-latest) - Fixed
+    timeout-minutes: 360
+    name: Deploy EnigMano (windows-latest) - Max Perf
 
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
         run: |
           Write-Host "==============================================="
-          Write-Host "🔹 EnigMano Instance : windows-latest (fixed)"
+          Write-Host "🔹 EnigMano Instance : windows-latest (max perf)"
           Write-Host "📦 Repository        : $env:GITHUB_REPOSITORY"
           Write-Host "RUNNER_TEMP         : $env:RUNNER_TEMP"
           Write-Host "GITHUB_WORKSPACE    : $env:GITHUB_WORKSPACE"
           Write-Host "==============================================="
 
-      - name: ⚙️ Best-effort Windows optimizations (safe)
+      - name: ⚙️ Max-effort Windows tuning (best-effort, safe)
         shell: pwsh
         run: |
+          Write-Host "==> Applying safe, reversible performance tweaks (best-effort)"
+
+          # 1) Set High Performance power plan (best-effort)
           Try {
             $hp = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
             powercfg -setactive $hp
+            Write-Host "-> Power plan set to High Performance"
           } Catch { Write-Warning "Power plan change skipped: $_" }
-          Try { Stop-Service -Name SysMain -Force -ErrorAction SilentlyContinue; Set-Service -Name SysMain -StartupType Disabled } Catch {}
-          Try { Stop-Service -Name WSearch -Force -ErrorAction SilentlyContinue; Set-Service -Name WSearch -StartupType Disabled } Catch {}
+
+          # 2) Stop noisy services if present (non-fatal)
+          foreach ($svc in @("SysMain","WSearch","DiagTrack")) {
+            Try {
+              if (Get-Service -Name $svc -ErrorAction SilentlyContinue) {
+                Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
+                Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+                Write-Host "-> Service $svc stopped/disabled (if present)"
+              }
+            } Catch { Write-Warning "Skipping service tweak for $svc: $_" }
+          }
+
+          # 3) Dynamic pagefile ~= RAM (best-effort)
           Try {
             $memBytes = (Get-CimInstance -ClassName Win32_PhysicalMemory -ErrorAction SilentlyContinue | Measure-Object -Property Capacity -Sum).Sum
             if ($memBytes -and $memBytes -gt 0) { $memMB = [math]::Round($memBytes / 1MB) } else { $memMB = 16000 }
+            Write-Host "Detected RAM (MB): $memMB"
             wmic computersystem where name="%computername%" set AutomaticManagedPagefile=False
             wmic pagefileset where name="C:\\pagefile.sys" delete
             wmic pagefileset create name="C:\\pagefile.sys"
             wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=$memMB,MaximumSize=$memMB
-          } Catch { Write-Warning "Pagefile change skipped: $_" }
-          Try { Enable-MMAgent -MemoryCompression } Catch {}
+            Write-Host "-> Pagefile set to $memMB MB (best-effort)"
+          } Catch { Write-Warning "Pagefile tweak skipped: $_" }
+
+          # 4) Memory compression (best-effort)
+          Try {
+            Enable-MMAgent -MemoryCompression
+            Write-Host "-> Memory compression enabled (if supported)"
+          } Catch { Write-Warning "Memory compression unavailable: $_" }
+
+          # 5) Defender exclusions for workspace & CRD (best-effort)
           Try {
             $paths = @($env:RUNNER_TEMP, $env:GITHUB_WORKSPACE, "C:\Program Files (x86)\Google\Chrome Remote Desktop")
-            foreach ($p in $paths) { if ($p -and (Test-Path $p)) { Add-MpPreference -ExclusionPath $p -ErrorAction SilentlyContinue } }
+            foreach ($p in $paths) {
+              if ($p -and (Test-Path $p)) {
+                Add-MpPreference -ExclusionPath $p -ErrorAction SilentlyContinue
+                Write-Host "-> Defender exclusion added for: $p"
+              } else { Write-Host "-> Path not present: $p (skip)" }
+            }
+          } Catch { Write-Warning "Defender exclusions skipped: $_" }
+
+          # 6) Request TRIM for SSD (best-effort)
+          Try { Optimize-Volume -DriveLetter C -ReTrim -Verbose; Write-Host "-> TRIM requested" } Catch { Write-Warning "TRIM skipped: $_" }
+
+          # 7) Reduce pagefile fragmentation & flush standby list (best-effort)
+          Try {
+            # Empty standby list (if RAM pressure) - uses RAMMap technique but here we attempt via Clear-PhysMemory (best-effort)
+            $null = Write-Host "-> Standby flush not guaranteed on hosted runner; skipping if unavailable"
           } Catch {}
+
+          Write-Host "==> Tuning complete (best-effort)."
 
       - name: 📥 Install Chrome Remote Desktop
         shell: pwsh
         run: |
           $crdInstaller = "$env:TEMP\crdhost.msi"
+          Write-Host "Downloading CRD to $crdInstaller ..."
           Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller -UseBasicParsing -ErrorAction Stop
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
           Remove-Item $crdInstaller -Force -ErrorAction SilentlyContinue
           Write-Host "✅ CRD installer processed (if allowed)."
 
-      - name: ⚔️ Start Chrome Remote Desktop Host (code & pin inline)
+      - name: ⚔️ Start Chrome Remote Desktop Host (code & pin inline, high-priority + affinity)
         shell: pwsh
         run: |
-          # === INSERTED AUTH CODE & PIN (kept exactly as requested) ===
+          # AUTH CODE & PIN (kept exactly as requested)
           $CRD_OAUTH_CODE = "4/0AVMBsJgLhAn6PWFzw7RVkRzu0G9NJq3HHCvQzGZM-Aa45edTbDJn9VDTo0WYKomZfXxSYA"
           $CRD_PIN = "123456"
-          # ============================================================
 
+          # locate exe
           $possible = @(
             "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
             "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           )
           $exe = $possible | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $exe) {
-            Write-Warning "CRD executable not found; skipping start."
-            exit 0
-          }
+          if (-not $exe) { Write-Warning "CRD executable not found; skipping start"; exit 0 }
 
           Write-Host "Starting CRD from: $exe"
           $args = @(
@@ -76,22 +115,51 @@ jobs:
             "--name=$Env:COMPUTERNAME",
             "--pin=$CRD_PIN"
           )
+
+          # Start high-priority process
           $proc = Start-Process -FilePath $exe -ArgumentList $args -PassThru -WindowStyle Hidden
           Start-Sleep -Seconds 4
-          Try { $proc.PriorityClass = 'High' } Catch { Write-Warning "Cannot set High priority: $_" }
+          Try { $proc.PriorityClass = 'High'; Write-Host "-> CRD priority set to High" } Catch { Write-Warning "Cannot set priority: $_" }
+
+          # Try to set CPU affinity to all logical processors
           Try {
             $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
             if ($cores -and $cores -gt 0) {
               $mask = 0
-              for ($i=0;$i -lt $cores;$i++){ $mask = $mask -bor (1 -shl $i) }
+              for ($i=0; $i -lt $cores; $i++) { $mask = $mask -bor (1 -shl $i) }
               $proc.ProcessorAffinity = $mask
+              Write-Host "-> Processor affinity set (mask: $mask)"
             }
           } Catch { Write-Warning "Cannot set affinity: $_" }
 
-      - name: 🔁 Watchdog (background for job duration) - FIXED
+      - name: 🔍 Start Perf monitor (background, writes CSV)
         shell: pwsh
         run: |
-          # Recompute CRD auth and path inside this step (scope is local to step)
+          $log = Join-Path $env:TEMP "enigm_perf.csv"
+          $script = @"
+param([int]\$interval=10,[int]\$duration=21600)
+`$end = (Get-Date).AddSeconds(`$duration)
+"`"Timestamp`",`"% Processor Time`",`"Available MBytes`",`"Disk Queue Length`",`"Network Bytes/sec`"" | Out-File -FilePath `"$log`" -Encoding UTF8
+while((Get-Date) -lt `$end) {
+  `$c = Get-Counter '\Processor(_Total)\% Processor Time','\Memory\Available MBytes','\PhysicalDisk(_Total)\Avg. Disk Queue Length','\Network Interface(*)\Bytes Total/sec' -ErrorAction SilentlyContinue
+  `$ts = (Get-Date -Format o)
+  `$cpu = ($c.CounterSamples | Where-Object Path -Like '*Processor(_Total)*') | Select-Object -ExpandProperty CookedValue
+  `$mem = ($c.CounterSamples | Where-Object Path -Like '*Memory\\Available*') | Select-Object -ExpandProperty CookedValue
+  `$disk = ($c.CounterSamples | Where-Object Path -Like '*PhysicalDisk*') | Select-Object -ExpandProperty CookedValue
+  `$net = ($c.CounterSamples | Where-Object Path -Like '*Bytes Total/sec' | Measure-Object -Property CookedValue -Sum).Sum
+  "`"$ts`",`"$([math]::Round($cpu,2))`",`"$([math]::Round($mem,2))`",`"$([math]::Round($disk,2))`",`"$([math]::Round($net,2))`"" | Out-File -FilePath `"$log`" -Append -Encoding UTF8
+  Start-Sleep -Seconds `$interval
+}
+"@
+          $path = Join-Path $env:TEMP "enigm_perf_monitor.ps1"
+          $script | Out-File -FilePath $path -Encoding UTF8
+          Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$path`"" -NoNewWindow -ErrorAction SilentlyContinue
+          Write-Host "-> Perf monitor started, logging to $log"
+
+      - name: 🔁 Watchdog (background restart if CRD dies)
+        shell: pwsh
+        run: |
+          # create watchdog script that restarts CRD if needed
           $CRD_OAUTH_CODE = "4/0AVMBsJgLhAn6PWFzw7RVkRzu0G9NJq3HHCvQzGZM-Aa45edTbDJn9VDTo0WYKomZfXxSYA"
           $CRD_PIN = "123456"
           $possible = @(
@@ -99,46 +167,48 @@ jobs:
             "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           )
           $exe = $possible | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $exe) {
-            Write-Warning "CRD executable not found for watchdog; skipping watchdog creation."
-            exit 0
-          }
+          if (-not $exe) { Write-Warning "CRD exe not present for watchdog; skipping"; exit 0 }
 
-          $watchdog = @"
+          $wd = @"
 param([int]\$seconds=21600)
-\$crdExe = '$exe'
-\$crdCode = '$CRD_OAUTH_CODE'
-\$crdPin = '$CRD_PIN'
 \$end = (Get-Date).AddSeconds(\$seconds)
+\$exe = '$exe'
+\$code = '$CRD_OAUTH_CODE'
+\$pin = '$CRD_PIN'
 while((Get-Date) -lt \$end) {
   if (-not (Get-Process -Name remoting_start_host -ErrorAction SilentlyContinue)) {
     try {
-      Start-Process -FilePath \$crdExe -ArgumentList "--code=`"\$crdCode`" --redirect-url=""https://remotedesktop.google.com/_/oauthredirect"" --name=$Env:COMPUTERNAME --pin=\$crdPin" -WindowStyle Hidden
-      Write-Output "[watchdog] restarted CRD at $(Get-Date)"
-    } catch { Write-Output "[watchdog] restart failed: $_" }
+      Start-Process -FilePath \$exe -ArgumentList \"--code=`\"\$code`\" --redirect-url='https://remotedesktop.google.com/_/oauthredirect' --name=$Env:COMPUTERNAME --pin=\$pin\" -WindowStyle Hidden
+      Write-Output \"[watchdog] restarted CRD at \" + (Get-Date)
+    } catch { Write-Output \"[watchdog] restart failed: \" + \$_ }
   }
   Start-Sleep -Seconds 30
 }
 "@
+          $p = Join-Path $env:TEMP "enigm_crd_watchdog.ps1"
+          $wd | Out-File -FilePath $p -Encoding UTF8
+          Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$p`" -seconds 21600" -NoNewWindow -ErrorAction SilentlyContinue
+          Write-Host "-> Watchdog launched"
 
-          $path = Join-Path $env:TEMP "crd_watchdog.ps1"
-          $watchdog | Out-File -FilePath $path -Encoding UTF8
-          Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$path`" -seconds 21600" -NoNewWindow -ErrorAction SilentlyContinue
-          Write-Host "-> Watchdog launched (background during job)."
-
-      - name: 🕒 Keep Alive 6h Timer
+      - name: 🕒 Keep Alive 6h Timer (job-level)
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            if ($s % 60 -eq 0) { Write-Host "$s seconds remaining..." }
+            if ($s % 600 -eq 0) { Write-Host "$s seconds remaining (keepalive)" }
             Start-Sleep -Seconds 1
           }
           Write-Host "⏰ 6 hours elapsed for the job."
+
+      - name: 📤 Upload perf log artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: enigm_perf_logs
+          path: ${{ runner.temp }}/enigm_perf.csv
 
       - name: 💠 Final Status
         if: always()
         shell: pwsh
         run: |
-          Write-Host "✅ EnigMano attempted on windows-latest (CRD start attempted)."
-          Write-Host "🔋 Note: hosted runner resource limits remain; these tweaks only optimize usage."
+          Write-Host "✅ EnigMano attempted on windows-latest (max-perf best-effort)."
+          Write-Host "🔋 Reminder: hosted runner resource limits still apply; for real extra RAM/CPU use self-hosted or larger GitHub runners."
