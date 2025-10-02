@@ -1,122 +1,182 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Dask Workers"
+name: "⚡ EnigMano Win11 + CRD Deployment (windows-latest, code+pin inline, max perf)"
 
 on:
   workflow_dispatch:
 
 jobs:
-  # ================================
-  # MASTER JOB = Chrome Remote Desktop + Dask Scheduler
-  # ================================
-  master:
+  deploy-enigmano:
     runs-on: windows-latest
-    outputs:
-      scheduler_ip: ${{ steps.get_ip.outputs.ip }}
+    name: Deploy EnigMano (windows-latest) - Max Perf Attempt
+
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
         run: |
           Write-Host "==============================================="
-          Write-Host "🔹 EnigMano MASTER Instance"
-          Write-Host "📦 Repository : $env:GITHUB_REPOSITORY"
+          Write-Host "🔹 EnigMano Instance : windows-latest (max perf attempt)"
+          Write-Host "📦 Repository        : $env:GITHUB_REPOSITORY"
+          Write-Host "RUNNER_TEMP         : $env:RUNNER_TEMP"
+          Write-Host "GITHUB_WORKSPACE    : $env:GITHUB_WORKSPACE"
           Write-Host "==============================================="
 
-      - name: 📥 Install Chrome Remote Desktop
+      - name: ⚙️ Best-effort Windows optimizations (safe, reversible attempts)
+        shell: pwsh
+        run: |
+          Write-Host "==> Start safe optimizations (best-effort, non-fatal)"
+
+          # 1) Power plan -> High Performance (best-effort)
+          Try {
+            $hp = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
+            powercfg -setactive $hp
+            Write-Host "-> Power plan: High Performance (set)"
+          } Catch { Write-Warning "Power plan change skipped: $_" }
+
+          # 2) Stop/disable SysMain & Windows Search if available (reduces jitter)
+          Try {
+            if (Get-Service -Name SysMain -ErrorAction SilentlyContinue) {
+              Stop-Service -Name SysMain -Force -ErrorAction SilentlyContinue
+              Set-Service -Name SysMain -StartupType Disabled -ErrorAction SilentlyContinue
+              Write-Host "-> SysMain stopped/disabled"
+            }
+          } Catch { Write-Warning "SysMain tweak skipped: $_" }
+
+          Try {
+            if (Get-Service -Name WSearch -ErrorAction SilentlyContinue) {
+              Stop-Service -Name WSearch -Force -ErrorAction SilentlyContinue
+              Set-Service -Name WSearch -StartupType Disabled -ErrorAction SilentlyContinue
+              Write-Host "-> WSearch stopped/disabled"
+            }
+          } Catch { Write-Warning "WSearch tweak skipped: $_" }
+
+          # 3) Pagefile => set approx equal to detected RAM (best-effort)
+          Try {
+            $memBytes = (Get-CimInstance -ClassName Win32_PhysicalMemory -ErrorAction SilentlyContinue | Measure-Object -Property Capacity -Sum).Sum
+            if ($memBytes -and $memBytes -gt 0) { $memMB = [math]::Round($memBytes / 1MB) } else { $memMB = 16000 }
+            Write-Host "Detected RAM (MB): $memMB"
+            wmic computersystem where name="%computername%" set AutomaticManagedPagefile=False
+            wmic pagefileset where name="C:\\pagefile.sys" delete
+            wmic pagefileset create name="C:\\pagefile.sys"
+            wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=$memMB,MaximumSize=$memMB
+            Write-Host "-> Pagefile set to $memMB MB (best-effort)"
+          } Catch { Write-Warning "Pagefile change skipped: $_" }
+
+          # 4) Memory compression (best-effort)
+          Try {
+            Enable-MMAgent -MemoryCompression
+            Write-Host "-> Memory compression enabled (if supported)"
+          } Catch { Write-Warning "Memory compression skipped: $_" }
+
+          # 5) Defender exclusions (workspace + runner temp + CRD path)
+          Try {
+            $paths = @($env:RUNNER_TEMP, $env:GITHUB_WORKSPACE, "C:\Program Files (x86)\Google\Chrome Remote Desktop")
+            foreach ($p in $paths) {
+              if ($p -and (Test-Path $p)) {
+                Add-MpPreference -ExclusionPath $p -ErrorAction SilentlyContinue
+                Write-Host "-> Defender exclusion added: $p"
+              } else {
+                Write-Host "-> Path not present: $p"
+              }
+            }
+          } Catch { Write-Warning "Defender exclusion skipped: $_" }
+
+          # 6) Disk trim (if supported)
+          Try {
+            Optimize-Volume -DriveLetter C -ReTrim -Verbose
+            Write-Host "-> TRIM requested (if SSD)"
+          } Catch { Write-Warning "TRIM skipped: $_" }
+
+          Write-Host "==> Optimizations attempted."
+
+      - name: 📥 Install Chrome Remote Desktop (inline code+pin)
         shell: pwsh
         run: |
           $crdInstaller = "$env:TEMP\crdhost.msi"
-          Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller
+          Write-Host "Downloading CRD installer to $crdInstaller ..."
+          Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller -UseBasicParsing -ErrorAction Stop
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
-          Remove-Item $crdInstaller -Force
-          Write-Host "✅ Chrome Remote Desktop installed."
+          Remove-Item $crdInstaller -Force -ErrorAction SilentlyContinue
+          Write-Host "✅ CRD installer processed (if allowed)."
 
-      - name: ⚡ Install Python & Dask
+      - name: ⚔️ Start Chrome Remote Desktop Host (code & pin inline, high priority + affinity attempt)
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install dask distributed --quiet
-          Write-Host "✅ Python + Dask installed."
+          # === INSERT YOUR CODE & PIN DIRECTLY BELOW ===
+          $CRD_OAUTH_CODE = "4/0AVMBsJgLhAn6PWFzw7RVkRzu0G9NJq3HHCvQzGZM-Aa45edTbDJn9VDTo0WYKomZfXxSYA"
+          $CRD_PIN = "123456"
+          # ==============================================
 
-      - name: ⚔️ Start Chrome Remote Desktop Host
+          $possible = @(
+            "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
+            "${Env:ProgramFiles}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          )
+          $exe = $possible | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            Write-Warning "CRD executable not found; skipping start."
+            exit 0
+          }
+
+          Write-Host "Starting CRD from: $exe"
+          $args = @(
+            "--code=`"4/0AVGzR1D2HWFKqHxrkbGaksy3SQY3ZJ6YHThYgw6Hdznm7h4n9pSNKCeTnC9P2xko_zaY1w`"",
+            "--redirect-url=""https://remotedesktop.google.com/_/oauthredirect""",
+            "--name=$Env:COMPUTERNAME",
+            "--pin=123456"
+          )
+          $proc = Start-Process -FilePath $exe -ArgumentList $args -PassThru -WindowStyle Hidden
+
+          Start-Sleep -Seconds 4
+          Try {
+            # Try to set High priority
+            $proc.PriorityClass = 'High'
+            Write-Host "-> CRD priority set to High"
+          } Catch { Write-Warning "Cannot set High priority: $_" }
+
+          Try {
+            # Try to set affinity to all available logical processors (mask)
+            $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+            if ($cores -and $cores -gt 0) {
+              # create mask with cores bits set
+              $mask = 0
+              for ($i=0;$i -lt $cores;$i++){ $mask = $mask -bor (1 -shl $i) }
+              $proc.ProcessorAffinity = $mask
+              Write-Host "-> CPU affinity set (mask: $mask)"
+            }
+          } Catch { Write-Warning "Cannot set affinity: $_" }
+
+      - name: 🔁 Watchdog (background for job duration)
         shell: pwsh
         run: |
-          $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-          if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
-          & $exe `
-            --code="4/0AVGzR1D6yrAR-CQpmwmhWyXKbc04HhOUJcM89VwTFkKETB08rnj6TmheuocwntRmoskZBw" `
-            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
-            --name=$Env:COMPUTERNAME `
-            --pin=123456
+          $watchdog = @"
+          param([int]\$seconds=21600)
+          \$end = (Get-Date).AddSeconds(\$seconds)
+          while((Get-Date) -lt \$end) {
+            if (-not (Get-Process -Name remoting_start_host -ErrorAction SilentlyContinue)) {
+              try {
+                Start-Process -FilePath '$exe' -ArgumentList '--code=`"$CRD_OAUTH_CODE`" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$Env:COMPUTERNAME --pin=$CRD_PIN' -WindowStyle Hidden
+                Write-Output "[watchdog] restarted CRD at $(Get-Date)"
+              } catch { Write-Output "[watchdog] restart failed: $_" }
+            }
+            Start-Sleep -Seconds 30
+          }
+"@
+          $path = Join-Path $env:TEMP "crd_watchdog.ps1"
+          $watchdog | Out-File -FilePath $path -Encoding UTF8
+          Start-Process -FilePath "powershell" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$path`" -seconds 21600" -NoNewWindow -ErrorAction SilentlyContinue
+          Write-Host "-> Watchdog launched (background during job)."
 
-      - name: 🌐 Get Scheduler IP
-        id: get_ip
-        shell: pwsh
-        run: |
-          $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike "169.*"} | Select-Object -First 1 -ExpandProperty IPAddress)
-          Write-Host "Scheduler IP: $ip"
-          echo "::set-output name=ip::$ip"
-
-      - name: 🖥 Start Dask Scheduler
-        shell: pwsh
-        run: |
-          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786" 
-
-      - name: ⏳ Wait 2 minutes for workers
-        shell: pwsh
-        run: |
-          Write-Host "Waiting 2 minutes for workers to connect..."
-          Start-Sleep -Seconds 120
-
-      - name: 🕒 MASTER Keep Alive (6h)
+      - name: 🕒 Keep Alive 6h Timer (to keep job alive)
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            [Math]::Sqrt((Get-Random)) > $null
-            $null = ,(New-Object byte[](1MB))
-            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
+            if ($s % 60 -eq 0) { Write-Host "$s seconds remaining..." }
+            Start-Sleep -Seconds 1
           }
-          Write-Host "⏰ MASTER terminé après 6h."
+          Write-Host "⏰ 6 hours elapsed for the job."
 
-  # ================================
-  # WORKERS = Dask CPU/RAM boosters
-  # ================================
-  workers:
-    runs-on: windows-latest
-    needs: master   # Attend que le master ait exposé son IP
-    strategy:
-      matrix:
-        instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
-    steps:
-      - name: 📥 Install Python & Dask
+      - name: 💠 Final Status
+        if: always()
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install dask distributed --quiet
-          Write-Host "✅ Worker Python + Dask installed."
-
-      - name: ⏳ Wait 2 minutes before connecting to scheduler
-        shell: pwsh
-        run: |
-          Write-Host "Worker ${{ matrix.instance }} waiting 2 minutes before connecting..."
-          Start-Sleep -Seconds 120
-
-      - name: 🚀 Connect Worker ${{ matrix.instance }} to Scheduler
-        shell: pwsh
-        run: |
-          $scheduler = "${{ needs.master.outputs.scheduler_ip }}:8786"
-          Write-Host "Worker ${{ matrix.instance }} connecting to scheduler at $scheduler"
-          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_worker $scheduler" 
-
-      - name: 🔥 Worker Load + Keep Alive (6h)
-        shell: pwsh
-        run: |
-          $total = 21600
-          $mem = @()
-          for ($s = $total; $s -ge 0; $s--) {
-            [Math]::Sqrt((Get-Random)) > $null
-            $mem += ,(New-Object byte[](1MB))
-            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
-          }
-          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
+          Write-Host "✅ EnigMano attempted on windows-latest (CRD start attempted)."
+          Write-Host "🔋 Note: hosted runner resource limits remain; these tweaks only optimize usage."
