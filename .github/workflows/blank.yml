@@ -1,4 +1,4 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers + Auto Dask Cluster"
+name: "⚡ EnigMano Win11 + CRD + 19 Dask Workers"
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
           Write-Host "📦 Repository : $env:GITHUB_REPOSITORY"
           Write-Host "==============================================="
 
-      - name: 📥 Install CRD + Python + Dask
+      - name: 📥 Install Chrome Remote Desktop
         shell: pwsh
         run: |
           $crdInstaller = "$env:TEMP\crdhost.msi"
@@ -29,36 +29,37 @@ jobs:
           Remove-Item $crdInstaller -Force
           Write-Host "✅ Chrome Remote Desktop installed."
 
+      - name: ⚡ Install Python & Dask
+        shell: pwsh
+        run: |
           python -m pip install --upgrade pip
           pip install dask distributed --quiet
-          Write-Host "✅ Python & Dask installed."
+          Write-Host "✅ Python + Dask installed."
 
       - name: ⚔️ Start Chrome Remote Desktop Host
         shell: pwsh
         run: |
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-          if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found."; exit 1 }
+          if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
           & $exe `
-            --code="4/0AVGzR1BG-uVZC7dK_2sb9LF-DGS59rJLvOf7wzgx_XcxJShfYtnorSEFZNASAUPym4G2mQ" `
+            --code="4/0AVGzR1DyXEocHu-LpRAGP4IYdmAha3FJRrCSJP2BMI_zMH9gHllij3p0F1dhRZRMQqQIGg" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
 
-      - name: 🖥️ Start Dask Scheduler
-        shell: pwsh
-        run: |
-          Start-Process python -ArgumentList "-m distributed.cli.dask_scheduler --host 0.0.0.0 --port 8786" -NoNewWindow
-          Write-Host "✅ Dask Scheduler started on MASTER."
-
-      - name: 🌐 Get Master IP
+      - name: 🌐 Get Scheduler IP
         id: get_ip
         shell: pwsh
         run: |
-          $ip = (Test-Connection -ComputerName $env:COMPUTERNAME -Count 1).IPV4Address.IPAddressToString
-          Write-Host "Master IP: $ip"
+          $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike "169.*"} | Select-Object -First 1 -ExpandProperty IPAddress)
+          Write-Host "Scheduler IP: $ip"
           echo "::set-output name=ip::$ip"
 
-      # Keep Alive last
+      - name: 🖥 Start Dask Scheduler
+        shell: pwsh
+        run: |
+          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786" 
+
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
         run: |
@@ -72,33 +73,27 @@ jobs:
           Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
-  # WORKERS = CPU/RAM boosters + Dask Workers
+  # WORKERS = Dask CPU/RAM boosters
   # ================================
   workers:
     runs-on: windows-latest
-    needs: []  # launch immediately
+    needs: master
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: 🚀 Worker ${{ matrix.instance }} Started
-        shell: pwsh
-        run: |
-          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
-
-      - name: 📥 Install Python + Dask
+      - name: 📥 Install Python & Dask
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install dask distributed --quiet
-          Write-Host "✅ Python & Dask installed on Worker ${{ matrix.instance }}"
+          Write-Host "✅ Worker Python + Dask installed."
 
-      - name: 🔗 Connect Worker to Dask Scheduler
+      - name: 🚀 Connect Worker ${{ matrix.instance }} to Scheduler
         shell: pwsh
         run: |
-          $scheduler_ip = "${{ jobs.master.outputs.scheduler_ip }}"
-          Start-Process python -ArgumentList "-m distributed.cli.dask_worker $scheduler_ip:8786" -NoNewWindow
-          Write-Host "✅ Worker ${{ matrix.instance }} connected to Dask Scheduler at $scheduler_ip:8786"
+          $scheduler = "${{ needs.master.outputs.scheduler_ip }}:8786"
+          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_worker $scheduler" 
 
       - name: 🔥 Worker Load + Keep Alive (6h)
         shell: pwsh
