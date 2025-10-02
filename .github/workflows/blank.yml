@@ -1,16 +1,16 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers"
+name: "⚡ EnigMano Win11 + CRD + 19 Dask Workers"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = Chrome Remote Desktop + Keep Alive
+  # MASTER JOB = Chrome Remote Desktop + Dask Scheduler
   # ================================
   master:
     runs-on: windows-latest
     outputs:
-      master_ready: true
+      scheduler_ip: ${{ steps.get_ip.outputs.ip }}
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
@@ -29,16 +29,36 @@ jobs:
           Remove-Item $crdInstaller -Force
           Write-Host "✅ Chrome Remote Desktop installed."
 
+      - name: ⚡ Install Python & Dask
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install dask distributed --quiet
+          Write-Host "✅ Python + Dask installed."
+
       - name: ⚔️ Start Chrome Remote Desktop Host
         shell: pwsh
         run: |
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
           & $exe `
-            --code="4/0AVGzR1A_wyYUCG2t_abQjcDMpKpdr8onxntA6WRsmgAAtZJ4jgFRgV3r4gKcdF7-wSa3GQ" `
+            --code="4/0AVGzR1BQlb1CRfLiWg-JFTjDzJs4mLiltJThoZxSOwwwKGpdu1oVhWWyCDdJJmao-ehmAw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
+
+      - name: 🌐 Get Scheduler IP
+        id: get_ip
+        shell: pwsh
+        run: |
+          $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike "169.*"} | Select-Object -First 1 -ExpandProperty IPAddress)
+          Write-Host "Scheduler IP: $ip"
+          echo "::set-output name=ip::$ip"
+
+      - name: 🖥 Start Dask Scheduler
+        shell: pwsh
+        run: |
+          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786"
 
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
@@ -53,7 +73,7 @@ jobs:
           Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
-  # WORKERS = CPU/RAM boosters (attente 2 minutes)
+  # WORKERS = Dask CPU/RAM boosters
   # ================================
   workers:
     runs-on: windows-latest
@@ -62,16 +82,24 @@ jobs:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: ⏱ Wait 2 minutes before starting
+      - name: ⏱ Wait 2 minutes before connecting
         shell: pwsh
         run: |
-          Write-Host "⏳ Worker ${{ matrix.instance }} waiting 2 minutes for master to be ready..."
+          Write-Host "⏳ Worker ${{ matrix.instance }} waiting 2 minutes for master scheduler..."
           Start-Sleep -Seconds 120
 
-      - name: 🚀 Worker ${{ matrix.instance }} Started
+      - name: 📥 Install Python & Dask
         shell: pwsh
         run: |
-          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
+          python -m pip install --upgrade pip
+          pip install dask distributed --quiet
+          Write-Host "✅ Worker Python + Dask installed."
+
+      - name: 🚀 Connect Worker ${{ matrix.instance }} to Scheduler
+        shell: pwsh
+        run: |
+          $scheduler = "${{ needs.master.outputs.scheduler_ip }}:8786"
+          Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_worker $scheduler"
 
       - name: 🔥 Worker Load + Keep Alive (6h)
         shell: pwsh
