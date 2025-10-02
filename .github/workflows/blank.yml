@@ -1,4 +1,4 @@
-name: "⚡ EnigMano Win11 + CRD Deployment (windows-latest, code+pin inline, max perf)"
+name: "⚡ EnigMano Win11 + CRD Deployment (windows-latest, inline code+pin, max perf)"
 
 on:
   workflow_dispatch:
@@ -100,10 +100,10 @@ jobs:
       - name: ⚔️ Start Chrome Remote Desktop Host (code & pin inline, high priority + affinity attempt)
         shell: pwsh
         run: |
-          # === INSERT YOUR CODE & PIN DIRECTLY BELOW ===
+          # === INSERTED AUTH CODE & PIN (kept exactly as requested) ===
           $CRD_OAUTH_CODE = "4/0AVMBsJgLhAn6PWFzw7RVkRzu0G9NJq3HHCvQzGZM-Aa45edTbDJn9VDTo0WYKomZfXxSYA"
           $CRD_PIN = "123456"
-          # ==============================================
+          # ============================================================
 
           $possible = @(
             "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe",
@@ -117,10 +117,10 @@ jobs:
 
           Write-Host "Starting CRD from: $exe"
           $args = @(
-            "--code=`"4/0AVGzR1D2HWFKqHxrkbGaksy3SQY3ZJ6YHThYgw6Hdznm7h4n9pSNKCeTnC9P2xko_zaY1w`"",
+            "--code=`"$CRD_OAUTH_CODE`"",
             "--redirect-url=""https://remotedesktop.google.com/_/oauthredirect""",
             "--name=$Env:COMPUTERNAME",
-            "--pin=123456"
+            "--pin=$CRD_PIN"
           )
           $proc = Start-Process -FilePath $exe -ArgumentList $args -PassThru -WindowStyle Hidden
 
