@@ -38,7 +38,7 @@ jobs:
             exit 1
           }
           & $exe `
-            --code="4/0AVGzR1B4v_KQG8n-OqMYygTYwyK_1A9wwA-d7ntWqfdpuqkxLur2ZaXrTUhgnoSlB8wMYw" `
+            --code="4/0AVGzR1CempCC-ttKu9KkmzLR8WYEe33ENTxispOtEPcpnTA1pBDkxZcYQ4WT2seaYeoxmQ" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
