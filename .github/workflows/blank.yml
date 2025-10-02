@@ -42,7 +42,7 @@ jobs:
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
           & $exe `
-            --code="4/0AVGzR1B7-KWZEfwmiOVKj2fj1v6tQvhm55SLI4bXPl4xabfJK30-dDrEcev-_cq8Po032A" `
+            --code="4/0AVGzR1BqB8I7XFhar35kzF7lJNLfXcN1DnFag2J0dx_ukOcSBROX26dpl7tw7qmwRn57Kw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
@@ -59,7 +59,7 @@ jobs:
         shell: pwsh
         run: |
           Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786"
-          Write-Host "✅ Dask Scheduler started"
+          Write-Host "✅ Scheduler started."
 
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
@@ -78,23 +78,23 @@ jobs:
   # ================================
   workers:
     runs-on: windows-latest
-    needs: []   # Pas de dépendance, lance en parallèle
+    needs: master
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: 📌 Wait 2 minutes to let master scheduler start
-        shell: pwsh
-        run: |
-          Write-Host "⏳ Worker ${{ matrix.instance }} waiting 2 minutes before connecting..."
-          Start-Sleep -Seconds 120
-
       - name: 📥 Install Python & Dask
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install dask distributed --quiet
           Write-Host "✅ Worker Python + Dask installed."
+
+      - name: ⏳ Wait 2 minutes for Scheduler
+        shell: pwsh
+        run: |
+          Write-Host "Waiting 2 minutes for scheduler to be ready..."
+          Start-Sleep -Seconds 120
 
       - name: 🚀 Connect Worker ${{ matrix.instance }} to Scheduler
         shell: pwsh
