@@ -1,55 +1,52 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers"
+name: "⚡ EnigMano Win11 + CRD + 19 Workers + Dask"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = Chrome Remote Desktop
+  # MASTER = RDP + Dask Scheduler
   # ================================
   master:
     runs-on: windows-latest
-    outputs:
-      master-ip: ${{ steps.get-ip.outputs.ip }}
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
         run: |
           Write-Host "==============================================="
-          Write-Host "🔹 EnigMano MASTER Instance"
+          Write-Host "🔹 EnigMano MASTER Instance (Scheduler + CRD)"
           Write-Host "📦 Repository : $env:GITHUB_REPOSITORY"
           Write-Host "==============================================="
 
-      - name: 📥 Install Chrome Remote Desktop
+      - name: 📥 Install Python + Dask + CRD
         shell: pwsh
         run: |
+          python -m ensurepip
+          python -m pip install --upgrade pip
+          pip install "dask[distributed]" psutil
+
           $crdInstaller = "$env:TEMP\crdhost.msi"
           Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
           Remove-Item $crdInstaller -Force
-          Write-Host "✅ Chrome Remote Desktop installed."
+          Write-Host "✅ CRD installed."
 
       - name: ⚔️ Start Chrome Remote Desktop Host
         shell: pwsh
         run: |
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-          if (-not (Test-Path $exe)) {
-            Write-Error "❌ CRD executable not found at $exe"
-            exit 1
-          }
-          & $exe `
-            --code="4/0AVGzR1CempCC-ttKu9KkmzLR8WYEe33ENTxispOtEPcpnTA1pBDkxZcYQ4WT2seaYeoxmQ" `
+          if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
+          & $exe --code="4/0AVGzR1CPn1WsjPbWHmGsqtZC885ukNDfXCiNtIvDEf7ss8bhAKNCQHt7IUtJxORDE7nRCQ" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
-            --name=$Env:COMPUTERNAME `
-            --pin=123456
+            --name=$Env:COMPUTERNAME --pin=123456
 
-      - name: 📝 Get Master IP (simulé pour workers)
-        id: get-ip
+      - name: 🚀 Start Dask Scheduler
         shell: pwsh
         run: |
-          # Pour simplifier, on renvoie localhost
-          echo "::set-output name=ip::127.0.0.1"
+          Start-Process powershell -ArgumentList "-Command python -m distributed.cli.dask_scheduler --host 0.0.0.0 --port 8786" -NoNewWindow
+          Write-Host "✅ Dask Scheduler running on port 8786"
 
+      # Keep Alive last, pour que la VM RDP reste ouverte
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
         run: |
@@ -60,34 +57,41 @@ jobs:
             if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
             Start-Sleep -Milliseconds 900
           }
-          Write-Host "⏰ MASTER terminé après 6h."
+          Write-Host "⏰ MASTER Keep Alive terminé après 6h."
 
   # ================================
-  # WORKERS = CPU/RAM boosters
+  # WORKERS = CPU/RAM boosters Dask
   # ================================
   workers:
-    needs: master
     runs-on: windows-latest
+    needs: []  # 🔥 Lancement parallèle direct
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: 🚀 Worker ${{ matrix.instance }} Started
+      - name: 🚀 Worker ${{ matrix.instance }} Setup
         shell: pwsh
         run: |
-          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
+          python -m ensurepip
+          python -m pip install --upgrade pip
+          pip install "dask[distributed]" psutil
 
-      - name: 🔥 Worker Load + Keep Alive (6h)
+      - name: 🔗 Connect Worker ${{ matrix.instance }} to Scheduler
+        shell: pwsh
+        run: |
+          $schedulerIP = "MASTER_IP_HERE"  # remplacer par l'IP publique du master RDP
+          Start-Process powershell -ArgumentList "-Command python -m distributed.cli.dask_worker $schedulerIP:8786 --nthreads 2 --memory-limit 15GB" -NoNewWindow
+          Write-Host "✅ Worker ${{ matrix.instance }} connected to Dask Scheduler"
+
+      - name: 🕒 Worker Keep Alive (6h)
         shell: pwsh
         run: |
           $total = 21600
           $mem = @()
           for ($s = $total; $s -ge 0; $s--) {
-            # Charge CPU (calcul inutile)
             [Math]::Sqrt((Get-Random)) > $null
-            # Charge RAM (bloc 1MB)
             $mem += ,(New-Object byte[](1MB))
             if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
             Start-Sleep -Milliseconds 900
           }
-          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
+          Write-Host "⏰ Worker ${{ matrix.instance }} Keep Alive terminé"
