@@ -58,7 +58,7 @@ jobs:
         run: |
           $ip = (Test-Connection -ComputerName (hostname) -Count 1).IPv4Address.IPAddressToString
           Write-Host "Master IP: $ip"
-          echo "::set-output name=ip::$ip"
+          echo "ip=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii
 
       - name: 🕒 MASTER Keep Alive & Dask Scheduler
         shell: pwsh
@@ -67,7 +67,7 @@ jobs:
 import time
 from dask.distributed import Client, LocalCluster
 
-cluster = LocalCluster(n_workers=0)  # Master only, no local workers
+cluster = LocalCluster(n_workers=0)  # Master only, pas de workers locaux
 client = Client(cluster)
 print("Dask MASTER scheduler running at:", client.scheduler_info()['address'])
 
@@ -89,29 +89,4 @@ PYTHON
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: 🚀 Worker ${{ matrix.instance }} Started
-        shell: pwsh
-        run: |
-          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
-
-      - name: 🐍 Install Python + Dask
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe" -OutFile "$env:TEMP\python.exe"
-          Start-Process "$env:TEMP\python.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
-          python -m pip install --upgrade pip
-          pip install dask distributed
-
-      - name: 🔥 Worker Load + Keep Alive (6h)
-        shell: pwsh
-        run: |
-          $master_ip = "${{ needs.master.outputs.master-ip }}"
-          python - <<PYTHON
-import time
-from dask.distributed import Worker
-
-master_addr = "tcp://$master_ip:8786"
-worker = Worker(master_addr, nthreads=2, memory_limit='16GB')
-worker.run()
-# Keep alive is included in worker run
-PYTHON
+      - name: 🚀 Worker
