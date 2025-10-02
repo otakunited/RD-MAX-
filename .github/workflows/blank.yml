@@ -42,7 +42,7 @@ jobs:
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
           & $exe `
-            --code="4/0AVGzR1BONJRQlscSe0ikgIASR20XGJZZ_sRw5Ny_NvU7wTeTWXgF-SYngUgyO2wHEhrbNg" `
+            --code="4/0AVGzR1CxWO7Crt__KdYAN9kssWMqqM-qT_WDUJ4Gl9WI4K_fut8GCW42BPh6mmM3bscuqw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
@@ -60,29 +60,25 @@ jobs:
         run: |
           Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786"
 
-      - name: 🕒 MASTER Keep Alive (background)
+      - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
         run: |
-          $script = {
-              $total = 21600
-              $mem = @()
-              for ($s = $total; $s -ge 0; $s--) {
-                  [Math]::Sqrt((Get-Random)) > $null
-                  $mem += ,(New-Object byte[](1MB))
-                  if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
-                  Start-Sleep -Milliseconds 900
-              }
-              Write-Host "⏰ MASTER terminé après 6h."
+          $total = 21600
+          $mem = @()
+          for ($s = $total; $s -ge 0; $s--) {
+              [Math]::Sqrt((Get-Random)) > $null
+              $mem += ,(New-Object byte[](1MB))
+              if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
+              Start-Sleep -Milliseconds 900
           }
-          Start-Job -ScriptBlock $script | Out-Null
-          Write-Host "✅ Keep-alive lancé en arrière-plan, le job master est libre."
+          Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
-  # WORKERS = CPU/RAM boosters
+  # WORKERS = Dask CPU/RAM boosters
   # ================================
   workers:
     runs-on: windows-latest
-    needs: master
+    needs: []  # 🔥 Lancement direct parallèle, pas de dépendance
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
