@@ -1,14 +1,16 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers"
+name: "⚡ EnigMano Win11 + CRD + 19 Workers + Dask Cluster"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = Chrome Remote Desktop
+  # MASTER JOB = Chrome Remote Desktop + Dask Scheduler
   # ================================
   master:
     runs-on: windows-latest
+    outputs:
+      master-ip: ${{ steps.get-ip.outputs.ip }}
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
@@ -37,30 +39,52 @@ jobs:
           }
 
           & $exe `
-            --code="4/0AVGzR1A-VgahKM46tc9mOBzSDMz3vVwjrgN_4KiklRScQw9C-SwpiqX1uz86K_8DfvnLKA" `
+            --code="4/0AVGzR1CempCC-ttKu9KkmzLR8WYEe33ENTxispOtEPcpnTA1pBDkxZcYQ4WT2seaYeoxmQ" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
 
-      # IMPORTANT: Le keep alive reste en dernier, mais il ne bloque que le master
-      - name: 🕒 MASTER Keep Alive (6h)
+      - name: 🐍 Install Python + Dask
         shell: pwsh
         run: |
-          $total = 21600
-          for ($s = $total; $s -ge 0; $s--) {
-            [Math]::Sqrt((Get-Random)) > $null
-            $null = ,(New-Object byte[](1MB))
-            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
-          }
-          Write-Host "⏰ MASTER terminé après 6h."
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe" -OutFile "$env:TEMP\python.exe"
+          Start-Process "$env:TEMP\python.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
+          python -m pip install --upgrade pip
+          pip install dask distributed
+
+      - name: 🔹 Get Master IP
+        id: get-ip
+        shell: pwsh
+        run: |
+          $ip = (Test-Connection -ComputerName (hostname) -Count 1).IPv4Address.IPAddressToString
+          Write-Host "Master IP: $ip"
+          echo "::set-output name=ip::$ip"
+
+      - name: 🕒 MASTER Keep Alive & Dask Scheduler
+        shell: pwsh
+        run: |
+          python - <<'PYTHON'
+import time
+from dask.distributed import Client, LocalCluster
+
+cluster = LocalCluster(n_workers=0)  # Master only, no local workers
+client = Client(cluster)
+print("Dask MASTER scheduler running at:", client.scheduler_info()['address'])
+
+# Keep alive 6h
+for i in range(21600, 0, -1):
+    if i % 60 == 0:
+        print(f"MASTER Keep Alive: {i} seconds remaining...")
+    time.sleep(1)
+print("⏰ MASTER terminé après 6h.")
+PYTHON
 
   # ================================
   # WORKERS = CPU/RAM boosters
   # ================================
   workers:
+    needs: master
     runs-on: windows-latest
-    needs: []   # 🔥 Supprime la dépendance → lancement direct parallèle
     strategy:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
@@ -70,15 +94,24 @@ jobs:
         run: |
           Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
 
+      - name: 🐍 Install Python + Dask
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe" -OutFile "$env:TEMP\python.exe"
+          Start-Process "$env:TEMP\python.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
+          python -m pip install --upgrade pip
+          pip install dask distributed
+
       - name: 🔥 Worker Load + Keep Alive (6h)
         shell: pwsh
         run: |
-          $total = 21600
-          $mem = @()
-          for ($s = $total; $s -ge 0; $s--) {
-            [Math]::Sqrt((Get-Random)) > $null
-            $mem += ,(New-Object byte[](1MB))
-            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
-          }
-          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
+          $master_ip = "${{ needs.master.outputs.master-ip }}"
+          python - <<PYTHON
+import time
+from dask.distributed import Worker
+
+master_addr = "tcp://$master_ip:8786"
+worker = Worker(master_addr, nthreads=2, memory_limit='16GB')
+worker.run()
+# Keep alive is included in worker run
+PYTHON
