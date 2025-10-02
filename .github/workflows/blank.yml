@@ -1,16 +1,16 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers Cluster"
+name: "⚡ EnigMano Win11 + CRD + 19 Workers"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = CRD + Cluster Head
+  # MASTER JOB = Chrome Remote Desktop
   # ================================
   master:
     runs-on: windows-latest
     outputs:
-      master_ip: ${{ steps.setip.outputs.master_ip }}
+      master_ready: ${{ steps.signal.outputs.ready }}
     steps:
       - name: 📌 Deployment Parameters
         shell: pwsh
@@ -27,7 +27,7 @@ jobs:
           Invoke-WebRequest "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" -OutFile $crdInstaller
           Start-Process msiexec.exe -ArgumentList "/i `"$crdInstaller`" /quiet /norestart" -Wait
           Remove-Item $crdInstaller -Force
-          Write-Host "✅ CRD installed."
+          Write-Host "✅ Chrome Remote Desktop installed."
 
       - name: ⚔️ Start Chrome Remote Desktop Host
         shell: pwsh
@@ -37,36 +37,33 @@ jobs:
             Write-Error "❌ CRD executable not found at $exe"
             exit 1
           }
+
           & $exe `
-            --code="4/0AVGzR1Bd4Q_ClmJ52lLEYN1-i0bRdzRjlQrBLXdYJDB18aPEKIDSKaqgGfLIfsmFKnK2fg" `
+            --code="4/0AVGzR1AP8gVwRP1c06qIXawl0IY_XzdQaKJPL2ywI3hU2YJd4xhH3yWiuSfrDJf7XWhQ_Q" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
 
-      - name: 🐍 Install Python + Ray
-        run: |
-          choco install -y python --version=3.10.11
-          refreshenv
-          pip install ray
-
-      - name: 🚀 Start Ray Head Node
-        id: setip
-        run: |
-          ray start --head --port=6379 --include-dashboard=True
-          $ip = (hostname -i)
-          echo "master_ip=$ip" >> $env:GITHUB_OUTPUT
+      - name: ✅ Signal Master Ready
+        id: signal
+        run: echo "ready=true" >> $env:GITHUB_OUTPUT
 
       - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
         run: |
           $total = 21600
           for ($s = $total; $s -ge 0; $s--) {
-            Write-Host "MASTER Alive... $s sec restantes"
-            Start-Sleep -Seconds 60
+            # Simulation CPU/RAM en continu
+            [Math]::Sqrt((Get-Random)) > $null
+            $null = ,(New-Object byte[](1MB))
+
+            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
+            Start-Sleep -Milliseconds 900
           }
+          Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
-  # WORKERS JOBS = Cluster Nodes
+  # WORKERS = CPU/RAM boosters
   # ================================
   workers:
     runs-on: windows-latest
@@ -77,24 +74,21 @@ jobs:
     steps:
       - name: 🚀 Worker ${{ matrix.instance }} Started
         shell: pwsh
-        run: Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
-
-      - name: 🐍 Install Python + Ray
         run: |
-          choco install -y python --version=3.10.11
-          refreshenv
-          pip install ray
+          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
 
-      - name: 🔗 Connect Worker to Master
-        run: |
-          $MASTER_IP="${{ needs.master.outputs.master_ip }}"
-          ray start --address="$MASTER_IP:6379"
-
-      - name: 🕒 WORKER Keep Alive (6h)
+      - name: 🔥 Worker Load + Keep Alive (6h)
         shell: pwsh
         run: |
           $total = 21600
+          $mem = @()
           for ($s = $total; $s -ge 0; $s--) {
-            Write-Host "Worker ${{ matrix.instance }} Alive... $s sec restantes"
-            Start-Sleep -Seconds 60
+            # Charge CPU (calcul inutile)
+            [Math]::Sqrt((Get-Random)) > $null
+            # Charge RAM (ajout petit bloc)
+            $mem += ,(New-Object byte[](1MB))
+
+            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
+            Start-Sleep -Milliseconds 900
           }
+          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
