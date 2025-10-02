@@ -42,7 +42,7 @@ jobs:
           $exe = "${Env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           if (-not (Test-Path $exe)) { Write-Error "❌ CRD executable not found"; exit 1 }
           & $exe `
-            --code="4/0AVGzR1BQlb1CRfLiWg-JFTjDzJs4mLiltJThoZxSOwwwKGpdu1oVhWWyCDdJJmao-ehmAw" `
+            --code="4/0AVGzR1BONJRQlscSe0ikgIASR20XGJZZ_sRw5Ny_NvU7wTeTWXgF-SYngUgyO2wHEhrbNg" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
@@ -60,20 +60,25 @@ jobs:
         run: |
           Start-Process -NoNewWindow -FilePath python -ArgumentList "-m distributed.cli.dask_scheduler --port 8786"
 
-      - name: 🕒 MASTER Keep Alive (6h)
+      - name: 🕒 MASTER Keep Alive (background)
         shell: pwsh
         run: |
-          $total = 21600
-          for ($s = $total; $s -ge 0; $s--) {
-            [Math]::Sqrt((Get-Random)) > $null
-            $null = ,(New-Object byte[](1MB))
-            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
+          $script = {
+              $total = 21600
+              $mem = @()
+              for ($s = $total; $s -ge 0; $s--) {
+                  [Math]::Sqrt((Get-Random)) > $null
+                  $mem += ,(New-Object byte[](1MB))
+                  if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
+                  Start-Sleep -Milliseconds 900
+              }
+              Write-Host "⏰ MASTER terminé après 6h."
           }
-          Write-Host "⏰ MASTER terminé après 6h."
+          Start-Job -ScriptBlock $script | Out-Null
+          Write-Host "✅ Keep-alive lancé en arrière-plan, le job master est libre."
 
   # ================================
-  # WORKERS = Dask CPU/RAM boosters
+  # WORKERS = CPU/RAM boosters
   # ================================
   workers:
     runs-on: windows-latest
@@ -82,18 +87,18 @@ jobs:
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: ⏱ Wait 2 minutes before connecting
-        shell: pwsh
-        run: |
-          Write-Host "⏳ Worker ${{ matrix.instance }} waiting 2 minutes for master scheduler..."
-          Start-Sleep -Seconds 120
-
       - name: 📥 Install Python & Dask
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install dask distributed --quiet
           Write-Host "✅ Worker Python + Dask installed."
+
+      - name: ⏱ Wait 2 minutes before connecting
+        shell: pwsh
+        run: |
+          Write-Host "⏳ Worker ${{ matrix.instance }} waiting 2 minutes before connecting to scheduler..."
+          Start-Sleep -Seconds 120
 
       - name: 🚀 Connect Worker ${{ matrix.instance }} to Scheduler
         shell: pwsh
@@ -107,9 +112,9 @@ jobs:
           $total = 21600
           $mem = @()
           for ($s = $total; $s -ge 0; $s--) {
-            [Math]::Sqrt((Get-Random)) > $null
-            $mem += ,(New-Object byte[](1MB))
-            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
-            Start-Sleep -Milliseconds 900
+              [Math]::Sqrt((Get-Random)) > $null
+              $mem += ,(New-Object byte[](1MB))
+              if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
+              Start-Sleep -Milliseconds 900
           }
           Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
