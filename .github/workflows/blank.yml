@@ -1,11 +1,11 @@
-name: "⚡ EnigMano Win11 + CRD + 19 Workers + Dask Cluster"
+name: "⚡ EnigMano Win11 + CRD + 19 Workers"
 
 on:
   workflow_dispatch:
 
 jobs:
   # ================================
-  # MASTER JOB = Chrome Remote Desktop + Dask Scheduler
+  # MASTER JOB = Chrome Remote Desktop
   # ================================
   master:
     runs-on: windows-latest
@@ -37,47 +37,30 @@ jobs:
             Write-Error "❌ CRD executable not found at $exe"
             exit 1
           }
-
           & $exe `
             --code="4/0AVGzR1B4v_KQG8n-OqMYygTYwyK_1A9wwA-d7ntWqfdpuqkxLur2ZaXrTUhgnoSlB8wMYw" `
             --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
             --name=$Env:COMPUTERNAME `
             --pin=123456
 
-      - name: 🐍 Install Python + Dask
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe" -OutFile "$env:TEMP\python.exe"
-          Start-Process "$env:TEMP\python.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
-          python -m pip install --upgrade pip
-          pip install dask distributed
-
-      - name: 🔹 Get Master IP
+      - name: 📝 Get Master IP (simulé pour workers)
         id: get-ip
         shell: pwsh
         run: |
-          $ip = (Test-Connection -ComputerName (hostname) -Count 1).IPv4Address.IPAddressToString
-          Write-Host "Master IP: $ip"
-          echo "ip=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding ascii
+          # Pour simplifier, on renvoie localhost
+          echo "::set-output name=ip::127.0.0.1"
 
-      - name: 🕒 MASTER Keep Alive & Dask Scheduler
+      - name: 🕒 MASTER Keep Alive (6h)
         shell: pwsh
         run: |
-          python - <<'PYTHON'
-import time
-from dask.distributed import Client, LocalCluster
-
-cluster = LocalCluster(n_workers=0)  # Master only, pas de workers locaux
-client = Client(cluster)
-print("Dask MASTER scheduler running at:", client.scheduler_info()['address'])
-
-# Keep alive 6h
-for i in range(21600, 0, -1):
-    if i % 60 == 0:
-        print(f"MASTER Keep Alive: {i} seconds remaining...")
-    time.sleep(1)
-print("⏰ MASTER terminé après 6h.")
-PYTHON
+          $total = 21600
+          for ($s = $total; $s -ge 0; $s--) {
+            [Math]::Sqrt((Get-Random)) > $null
+            $null = ,(New-Object byte[](1MB))
+            if ($s % 60 -eq 0) { Write-Host "MASTER $s secondes restantes..." }
+            Start-Sleep -Milliseconds 900
+          }
+          Write-Host "⏰ MASTER terminé après 6h."
 
   # ================================
   # WORKERS = CPU/RAM boosters
@@ -89,4 +72,22 @@ PYTHON
       matrix:
         instance: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     steps:
-      - name: 🚀 Worker
+      - name: 🚀 Worker ${{ matrix.instance }} Started
+        shell: pwsh
+        run: |
+          Write-Host "⚡ Worker ${{ matrix.instance }} boosting perf..."
+
+      - name: 🔥 Worker Load + Keep Alive (6h)
+        shell: pwsh
+        run: |
+          $total = 21600
+          $mem = @()
+          for ($s = $total; $s -ge 0; $s--) {
+            # Charge CPU (calcul inutile)
+            [Math]::Sqrt((Get-Random)) > $null
+            # Charge RAM (bloc 1MB)
+            $mem += ,(New-Object byte[](1MB))
+            if ($s % 60 -eq 0) { Write-Host "Worker ${{ matrix.instance }} : $s secondes restantes..." }
+            Start-Sleep -Milliseconds 900
+          }
+          Write-Host "⏰ Worker ${{ matrix.instance }} terminé après 6h."
